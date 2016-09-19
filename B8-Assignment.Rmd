@@ -1,0 +1,145 @@
+---
+title: "Barbell lifts classification using wearables"
+author: "JoPM"
+date: "18 septembre 2016"
+output: html_document
+---
+
+## Introduction
+The quantified self movement is growing. Many differents device exist to record data while training. For this project, the data was recored using accelerometers on the belt, forearm, arm, and dumbell. This report explain who a model was develop to classify barbell lift in 5 class.
+
+## General info
+The data came from 6 participants who execute Unilateral Dumbbell Biceps Curl in 5 different maners : exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+
+```{r}
+# package / library
+library(caret)
+library(randomForest)
+```
+
+## Data
+```{r}
+trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+trainset <- read.csv(url(trainUrl))
+testset <- read.csv(url(testUrl))
+```
+
+## Data exploration and cleaning
+The training set as 160 variables.
+For each variable, there are 19622 observations.
+As for the test set, there are 20 observations with 19622 observations.
+
+The "classe" varible is the outcome. There are 5 the different levels:
+```{r}
+levels(trainset$classe)
+```
+
+There seems to have a lot of variable with missing values. Thoses variables will
+be exclude from the analysis as they don't offer information to the classification
+model. In addition, you want to develop a model that is independant of the person. For this reason, the "user_name" variable was exclude. 
+Other variables are excludes :
+"X" as it represent only the index
+"cvtd_timestamp" as only timestamp were keep
+also, many variable were eliminate as they contain "" and/or "#DIV/0!" as variable levels.
+```{r}
+# cleaning data
+trainset_new <- trainset[ , apply(trainset, 2, function(x) !any(is.na(x)))]
+trainset_new$user_name <- NULL
+trainset_new$X <- NULL
+trainset_new$cvtd_timestamp <- NULL
+trainset_new$kurtosis_yaw_forearm <- NULL
+trainset_new$skewness_yaw_belt <- NULL
+trainset_new$kurtosis_yaw_belt <- NULL
+trainset_new$amplitude_yaw_belt <- NULL
+trainset_new$kurtosis_yaw_dumbbell <- NULL
+trainset_new$skewness_yaw_dumbbell <- NULL
+trainset_new$amplitude_yaw_dumbbell <- NULL
+trainset_new$skewness_yaw_forearm <- NULL
+trainset_new$amplitude_yaw_forearm <- NULL
+```
+
+To eliminate more variables to obtain a more simple model, all the variables with close to zero variance were eliminate.
+```{r}
+NZV <- nearZeroVar(trainset_new, saveMetrics=TRUE)
+idx <- NZV$nzv
+trainset_new <- trainset_new[!idx]
+
+D <- dim(trainset_new)
+```
+After that, the new train set dimension are `r D[1]` observations and `r D[2]` variables.
+
+## Models creation
+The large size of the training set allow to do cross-validation by subsetting a training and a test set. It is usefull, as it permit to optimize the model with
+the training set. The test set could only be use to caracterize the final model.
+The cross-validation was made via random subsampling: 60% of the training data
+form the substrainset and the 40% remaining the subtestset.
+```{r}
+inTrain = createDataPartition(trainset_new$classe, p = 0.6)[[1]]
+subtrainset = trainset_new[ inTrain,]
+subtestset = trainset_new[-inTrain,]
+
+D_train <- dim(subtrainset)
+D_test <- dim(subtestset)
+```
+The subtrain set dimension is `r D_train[1]` observations and `r D_train[2]` variables.
+The subtrain set dimension is `r D_test[1]` observations and `r D_test[2]` variables.
+
+
+As there are many way to determine a predicting model,only three models were investigated. The models are "random forest", "boosted trees" and "linear discriminant analysis". The models use all the remaining variables to start with. For each model, the prediction
+was made with the subtestset.
+
+### Random forest
+```{r}
+modelRF <- randomForest(classe ~ ., data = subtrainset)
+predicRF <- predict(modelRF, newdata = subtestset)
+confusionMatrix(predicRF, subtestset$classe)
+```
+### Boosted Trees
+sorry, to long to process.
+```{r}
+# modelGBM_t2 <- train(classe ~ ., method = 'gbm', data = subtrainset)
+# predicGBM <- predict(modelGBM, newdata = subtestset)
+# confusionMatrix(predicGBM, subtestset$classe)
+```
+### Linear discriminant analysis
+```{r}
+modelLDA <- train(classe ~ ., method = 'lda', data = subtrainset)
+predicLDA <- predict(modelLDA, newdata = subtestset)
+confusionMatrix(predicLDA, subtestset$classe)
+```
+
+## Final model
+The boosted trees model was eliminate as it take a very large amount of time to compute as designed. On the contrary, the linear discriminant analysis was execute very fast,
+but the accuracy resulting is low. 
+The resulting chosen model is the random forest. The accuracy is very good. As the training
+wasn't done many time, the model should not be overfit.
+
+The testset should be transform to contain the same variable as in the new trainset.
+After it is done, it is possible to apply the chosen model to the new testset
+in order to obtain the prediction.
+```{r}
+t <- colnames(trainset_new)
+var_names <- t[1]
+x <- 2:length(t)-1
+for (i in x){var_names <- c(var_names, t[i])}
+testset_new <- subset(testset, select=var_names)
+
+predicTestSet <- predict(modelRF, newdata = testset_new)
+```
+The prediction for the 20 samples in the testset are:
+`r predicTestSet`
+
+## Expected out-of-sample error
+The out-of-sample error is "1-accuracy" obtain from cross-validation.
+The accuracy is the proportion of correct outcome over the total data of the
+subtestset. The "Expected out-of-sample error" would be "1-expected accuracy" 
+of the testing data set. 
+
+## Conclusion
+In conclusion, the random forest model seems the best in consideration of accuracy, 
+complexity and time consumption. 
+Some possible improvement would be to decrease the number of variable needed to 
+accomplish this classification. 
